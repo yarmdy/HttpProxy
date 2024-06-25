@@ -97,6 +97,7 @@ namespace HttpProxy.Internal
                         //_logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} receive data {data.Length} Byte");
                         var request = _requestResolver.DataToRequest(data);
                         request.Headers["host"][0].value="sogou.com";
+                        request.Headers["connection"][0].value="close";
                         await clientStandIn.SendAsync(_requestResolver.RequestToData(request));
                         data = await receiveAsync(clientStandIn);
                         var response = _responseResolver.DataToResponse(data);
