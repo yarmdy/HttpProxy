@@ -16,11 +16,13 @@ namespace HttpProxy.Internal
         IEndPointProvider _endPointProvider;
         ILogger<TcpApplication> _logger;
         IHttpRequestResolver _requestResolver;
-        public TcpApplication(IEndPointProvider endPointProvider, ILogger<TcpApplication> logger, IHttpRequestResolver requestResolver)
+        IHttpResponseResolver _responseResolver;
+        public TcpApplication(IEndPointProvider endPointProvider, ILogger<TcpApplication> logger, IHttpRequestResolver requestResolver, IHttpResponseResolver httpResponseResolver)
         {
             _logger = logger;
             _endPointProvider = endPointProvider;
             _requestResolver = requestResolver;
+            _responseResolver = httpResponseResolver;
         }
 
         public Task Start()
@@ -96,7 +98,8 @@ namespace HttpProxy.Internal
                         request.Headers["host"][0].value="sogou.com";
                         await clientStandIn.SendAsync(_requestResolver.RequestToData(request));
                         data = await receiveAsync(clientStandIn);
-                        var ret = await client.SendAsync(data);
+                        var response = _responseResolver.DataToResponse(data);
+                        var ret = await client.SendAsync(_responseResolver.ResponseToData(response));
                     } while (true);
                 }catch(Exception ex)
                 {
