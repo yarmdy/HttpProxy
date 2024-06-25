@@ -86,6 +86,7 @@ namespace HttpProxy.Internal
                 {
                     Socket? clientStandIn= new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                     await clientStandIn.ConnectAsync(new IPEndPoint(IPAddress.Parse("101.226.101.175"), 80));
+                    
                     do
                     {
                         var data = await receiveAsync(client);
