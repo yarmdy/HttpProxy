@@ -101,6 +101,31 @@ namespace HttpProxy.Internal
                         await clientStandIn.SendAsync(_requestResolver.RequestToData(request));
                         data = await receiveAsync(clientStandIn);
                         var response = _responseResolver.DataToResponse(data);
+                        Memory<byte>? dataEx=null;
+                        if (response.Headers.ContainsKey("content-length") 
+                        && int.TryParse(response.Headers["content-length"][0].value, out int maxLen)
+                        && maxLen>response.Body.Length)
+                        {
+                            dataEx = await receiveAsync(clientStandIn, maxLen - response.Body.Length);
+                            
+                        }
+                        if(response.Headers.ContainsKey("transfer-encoding")
+                        && response.Headers["transfer-encoding"][0].value=="chunked" && new string(data.Slice(data.Length - 5, 5).ToArray().Select(a => (char)a).ToArray()) != endOfChunked)
+                        {
+                            dataEx = await receiveAsync(clientStandIn, 0,true);
+                            
+                        }
+                        if (dataEx != null)
+                        {
+                            var dataRes = new byte[data.Length + dataEx.Value.Length];
+
+                            data.CopyTo(dataRes);
+                            dataEx.Value.CopyTo(new Memory<byte>(dataRes, data.Length, dataEx.Value.Length));
+
+                            data = dataRes;
+                            response = _responseResolver.DataToResponse(data);
+                        }
+                        
                         var ret = await client.SendAsync(_responseResolver.ResponseToData(response));
                     } while (true);
                 }catch(Exception ex)
@@ -110,30 +135,39 @@ namespace HttpProxy.Internal
                 _logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} end");
             });
         }
-
-        private async Task<Memory<byte>> receiveAsync(Socket client)
+        const string endOfChunked = "0\r\n";
+        private async Task<Memory<byte>> receiveAsync(Socket client,int maxlen=0,bool isChunked = false)
         {
             if (client == null)
             {
                 return new Memory<byte>();
             }
-            var res = new List<Memory<byte>>();
+            var res = new List<byte>();
             do
             {
-                Memory<byte> buffer = new byte[102400];
+                Memory<byte> buffer = new byte[10240];
                 var len = await client.ReceiveAsync(buffer);
+                maxlen -= len;
+                if (maxlen < 0)
+                {
+                    maxlen = 0;
+                }
                 if (len == 0)
                 {
                     break;
                 }
-                res.Add(buffer.Slice(0,len));
-                if (len < buffer.Length)
+                res.AddRange(buffer.Slice(0,len).ToArray());
+                if (isChunked)
+                {
+                    isChunked = new string(res.TakeLast(5).Select(a => (char)a).ToArray())!= endOfChunked;
+                }
+                if (len < buffer.Length && maxlen==0 && !isChunked)
                 {
                     break;
                 }
             } while (true);
 
-            return res.SelectMany(a=>a.ToArray()).ToArray();
+            return res.ToArray();
         }
 
     }
