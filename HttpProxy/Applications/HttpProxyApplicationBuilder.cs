@@ -28,6 +28,7 @@ namespace HttpProxy.Applications
             Services.AddLogging(a=>a.AddConsole());
             Services.AddSingleton<IEndPointProvider>(a=>new EndPointProvider(args));
             Services.AddSingleton<TcpApplication>();
+            Services.AddSingleton<IHttpRequestResolver, HttpRequestResolver>();
         }
     }
 }

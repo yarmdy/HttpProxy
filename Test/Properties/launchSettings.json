@@ -2,7 +2,7 @@
   "profiles": {
     "Test": {
       "commandName": "Project",
-      "commandLineArgs": "-http 192.168.0.11:8069"
+      "commandLineArgs": "-http 10.0.12.229:8069"
     }
   }
 }

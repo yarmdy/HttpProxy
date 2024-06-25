@@ -15,10 +15,12 @@ namespace HttpProxy.Internal
     {
         IEndPointProvider _endPointProvider;
         ILogger<TcpApplication> _logger;
-        public TcpApplication(IEndPointProvider endPointProvider, ILogger<TcpApplication> logger)
+        IHttpRequestResolver _requestResolver;
+        public TcpApplication(IEndPointProvider endPointProvider, ILogger<TcpApplication> logger, IHttpRequestResolver requestResolver)
         {
             _logger = logger;
             _endPointProvider = endPointProvider;
+            _requestResolver = requestResolver;
         }
 
         public Task Start()
@@ -65,6 +67,7 @@ namespace HttpProxy.Internal
                     try
                     {
                         var client = socket.Accept();
+                        processClient(client);
                     }
                     catch (Exception ex)
                     {
@@ -74,9 +77,58 @@ namespace HttpProxy.Internal
             });
         }
         private void processClient(Socket client) {
-            Task.Run(() => {
-                client.BeginReceive();
+            Task.Run(async () => {
+                var clientEndPoint = (client.RemoteEndPoint as IPEndPoint)!;
+                _logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} connected");
+                try
+                {
+                    Socket? clientStandIn= new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    await clientStandIn.ConnectAsync(new IPEndPoint(IPAddress.Parse("101.226.101.175"), 80));
+                    do
+                    {
+                        var data = await receiveAsync(client);
+                        if (data.Length == 0)
+                        {
+                            break;
+                        }
+                        //_logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} receive data {data.Length} Byte");
+                        var request = _requestResolver.DataToRequest(data);
+                        request.Headers["host"][0].value="sogou.com";
+                        await clientStandIn.SendAsync(_requestResolver.RequestToData(request));
+                        data = await receiveAsync(clientStandIn);
+                        var ret = await client.SendAsync(data);
+                    } while (true);
+                }catch(Exception ex)
+                {
+                    _logger.LogError(ex, "客户端连接出错");
+                }
+                _logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} end");
             });
+        }
+
+        private async Task<Memory<byte>> receiveAsync(Socket client)
+        {
+            if (client == null)
+            {
+                return new Memory<byte>();
+            }
+            var res = new List<Memory<byte>>();
+            do
+            {
+                Memory<byte> buffer = new byte[102400];
+                var len = await client.ReceiveAsync(buffer);
+                if (len == 0)
+                {
+                    break;
+                }
+                res.Add(buffer.Slice(0,len));
+                if (len < buffer.Length)
+                {
+                    break;
+                }
+            } while (true);
+
+            return res.SelectMany(a=>a.ToArray()).ToArray();
         }
 
     }
