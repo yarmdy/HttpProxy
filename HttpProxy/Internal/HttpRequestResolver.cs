@@ -50,6 +50,5 @@ namespace HttpProxy.Internal
             sb.Append(request.Body);
             return Encoding.ASCII.GetBytes(sb.ToString());
         }
-
     }
 }

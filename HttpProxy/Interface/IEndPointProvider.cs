@@ -15,5 +15,6 @@ namespace HttpProxy.Interface
         EndPoint? EndPointHttpTo { get; }
         EndPoint? EndPointHttps { get; }
         EndPoint? EndPointHttpsTo { get; }
+        string? Domain { get; }
     }
 }

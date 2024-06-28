@@ -2,7 +2,7 @@
   "profiles": {
     "Test": {
       "commandName": "Project",
-      "commandLineArgs": "-http 10.0.12.229:8069"
+      "commandLineArgs": "-http 10.0.12.229:8069 -httpto 23.225.198.202:80 -domain www.zxzj2024.com"
     }
   }
 }

@@ -30,6 +30,7 @@ namespace HttpProxy.Applications
             Services.AddSingleton<TcpApplication>();
             Services.AddSingleton<IHttpRequestResolver, HttpRequestResolver>();
             Services.AddSingleton<IHttpResponseResolver, HttpResponseResolver>();
+            Services.AddSingleton<ITcpContext, TcpContext>();
         }
     }
 }

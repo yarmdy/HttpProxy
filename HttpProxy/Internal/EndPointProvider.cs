@@ -27,6 +27,8 @@ namespace HttpProxy.Internal
         private EndPoint? _endPointHttpTo;
         private EndPoint? _endPointHttpsTo;
 
+        private string? _domain;
+
         public EndPoint? EndPoint => _endPoint;
         public EndPoint? EndPointHttp => _endPointHttp;
         public EndPoint? EndPointHttps => _endPointHttps;
@@ -34,6 +36,7 @@ namespace HttpProxy.Internal
         public EndPoint? EndPointTo => _endPointTo;
         public EndPoint? EndPointHttpTo => _endPointHttpTo;
         public EndPoint? EndPointHttpsTo => _endPointHttpsTo;
+        public string? Domain => _domain;
 
         EndPoint? createEndPoint(string? str)
         {
@@ -91,7 +94,12 @@ namespace HttpProxy.Internal
                 var str = args.Skip(httpsToIndex + 1).FirstOrDefault();
                 _endPointHttpsTo = createEndPoint(str);
             }
-
+            var domainIndex = args.FindIndex(a => a.ToLower() == "-domain");
+            if (domainIndex != -1)
+            {
+                var str = args.Skip(domainIndex + 1).FirstOrDefault();
+                _domain = str;
+            }
         }
     }
 }

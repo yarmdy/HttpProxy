@@ -1,5 +1,6 @@
 ﻿using HttpProxy.Enums;
 using HttpProxy.Interface;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -8,17 +9,20 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace HttpProxy.Internal
 {
     internal class TcpApplication
     {
+        IServiceProvider _serviceProvider;
         IEndPointProvider _endPointProvider;
         ILogger<TcpApplication> _logger;
         IHttpRequestResolver _requestResolver;
         IHttpResponseResolver _responseResolver;
-        public TcpApplication(IEndPointProvider endPointProvider, ILogger<TcpApplication> logger, IHttpRequestResolver requestResolver, IHttpResponseResolver httpResponseResolver)
+        public TcpApplication(IServiceProvider serviceProvider,IEndPointProvider endPointProvider, ILogger<TcpApplication> logger, IHttpRequestResolver requestResolver, IHttpResponseResolver httpResponseResolver)
         {
+            _serviceProvider = serviceProvider;
             _logger = logger;
             _endPointProvider = endPointProvider;
             _requestResolver = requestResolver;
@@ -33,17 +37,17 @@ namespace HttpProxy.Internal
                 if (_endPointProvider.EndPoint != null)
                 {
                     var socket = getSocket(_endPointProvider.EndPoint);
-                    tasks.Add(startProxy(socket));
+                    tasks.Add(startProxy(socket,_endPointProvider.EndPointTo,EnumConnectionType.Tcp));
                 }
                 if (_endPointProvider.EndPointHttp != null)
                 {
                     var socket = getSocket(_endPointProvider.EndPointHttp);
-                    tasks.Add(startProxy(socket));
+                    tasks.Add(startProxy(socket,_endPointProvider.EndPointHttpTo, EnumConnectionType.Http));
                 }
                 if (_endPointProvider.EndPointHttps != null)
                 {
                     var socket = getSocket(_endPointProvider.EndPointHttps);
-                    tasks.Add(startProxy(socket));
+                    tasks.Add(startProxy(socket,_endPointProvider.EndPointHttpsTo, EnumConnectionType.Https));
                 }
                 _logger.LogInformation("tcp启动成功");
                 return Task.WhenAll(tasks);
@@ -59,33 +63,44 @@ namespace HttpProxy.Internal
             socket.Bind(endPoint);
             return socket;
         }
-        private Task startProxy(Socket socket)
+        private Task startProxy(Socket socket,EndPoint? endPointTo,EnumConnectionType connectionType)
         {
             socket.Listen(0);
             return Task.Run(() =>
             {
                 while (true)
                 {
-                    try
+                    using (var scope = _serviceProvider.CreateScope())
                     {
-                        var client = socket.Accept();
-                        processClient(client);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "套接字错误");
+                        var context = scope.ServiceProvider.GetRequiredService<ITcpContext>();
+                        context.TcpServer = socket;
+                        context.ConnectionType = connectionType;
+                        context.MiddleEndPoint = endPointTo;
+                        try
+                        {
+                            var client = socket.Accept();
+                            context.TcpClient = client;
+                            processClient(context);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "套接字错误");
+                        }
                     }
                 }
             });
         }
-        private void processClient(Socket client) {
+        private void processClient(ITcpContext context) {
             Task.Run(async () => {
+                Socket client = context.TcpClient;
+                
                 var clientEndPoint = (client.RemoteEndPoint as IPEndPoint)!;
                 _logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} connected");
                 try
                 {
-                    Socket? clientStandIn= new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                    await clientStandIn.ConnectAsync(new IPEndPoint(IPAddress.Parse("101.226.101.175"), 80));
+                    Socket? clientStandIn= new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    var ipendpoint = context.MiddleEndPoint as IPEndPoint;
+                    await clientStandIn.ConnectAsync(ipendpoint!);
                     
                     do
                     {
@@ -96,8 +111,9 @@ namespace HttpProxy.Internal
                         }
                         //_logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} receive data {data.Length} Byte");
                         var request = _requestResolver.DataToRequest(data);
-                        request.Headers["host"][0].value="sogou.com";
+                        request.Headers["host"][0].value=$"{_endPointProvider.Domain??ipendpoint!.Address.ToString()}:{ipendpoint!.Port}";
                         request.Headers["connection"][0].value="close";
+                        request.Headers["user-agent"] = [(1, "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.3 Mobile/15E148 Safari/604.1")];
                         await clientStandIn.SendAsync(_requestResolver.RequestToData(request));
                         data = await receiveAsync(clientStandIn);
                         var response = _responseResolver.DataToResponse(data);
@@ -127,6 +143,7 @@ namespace HttpProxy.Internal
                         }
                         
                         var ret = await client.SendAsync(_responseResolver.ResponseToData(response));
+                        break;
                     } while (true);
                 }catch(Exception ex)
                 {
