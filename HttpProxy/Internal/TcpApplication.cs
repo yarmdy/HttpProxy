@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -141,6 +143,58 @@ namespace HttpProxy.Internal
                             response = _responseResolver.DataToResponse(data);
                         }
                         
+                        if(response.Headers.ContainsKey("transfer-encoding")
+                        && response.Headers["transfer-encoding"][0].value == "chunked" && response.Headers["content-type"][0].value.StartsWith("text/html"))
+                        {
+                            var bodyList = new List<Memory<byte>>();
+                            var start = 0;
+                            var times = 0;
+                            for (int i = 0; i <response.Body.Length;i++)
+                            {
+                                if (i == 0)
+                                {
+                                    continue;
+                                }
+                                if (response.Body.Span[i]!='\n' || response.Body.Span[i-1] != '\r')
+                                {
+                                    continue;
+                                }
+                                times++;
+                                var tstart = start;
+                                start = i + 1;
+                                if (times % 2 != 0)
+                                {
+                                    continue;
+                                }
+                                var bodySlice = response.Body.Slice(tstart, start - tstart - 2);
+                                if (bodySlice.Length == 0)
+                                {
+                                    continue;
+                                }
+                                bodyList.Add(bodySlice);
+                            }
+                            string bodyStr;
+                            using (var memoryStream = new MemoryStream(bodyList.SelectMany(a => a.ToArray()).ToArray()))
+                            {
+                                using var gzip = new GZipStream(memoryStream, CompressionMode.Decompress);
+                                using var resualtStream=new MemoryStream();
+                                await gzip.CopyToAsync(resualtStream);
+                                gzip.Close();
+                                bodyStr = Encoding.UTF8.GetString(resualtStream.ToArray());
+                                bodyStr = bodyStr.Replace("</body>", """<div style="position: fixed;width: 33vw;height: 25vh;box-sizing: border-box;border: 10px solid #0f0;top: 33vh;left: 33vw;z-index: 9999999999;background: #ffb400;font-size: 30px;text-align: center;line-height: 22vh;">被我劫持了</div></body>""");
+                            }
+                            using (var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(bodyStr)))
+                            {
+                                using var resualtStream = new MemoryStream();
+                                using var gzip = new GZipStream(resualtStream, CompressionLevel.Optimal);
+                                await memoryStream.CopyToAsync(gzip);
+                                gzip.Close();
+                                var bodyData = resualtStream.ToArray();
+                                var bodyLen = (bodyData.Length.ToString("X") + "\r\n").Select(a=>(byte)a).ToArray();
+                                var bodyEnd = new byte[] {13,10,48,13,10,13,10 };
+                                response.Body =  bodyLen.Concat(bodyData).Concat(bodyEnd).ToArray();
+                            }
+                        }
                         var ret = await client.SendAsync(_responseResolver.ResponseToData(response));
                         
                     } while (true);
