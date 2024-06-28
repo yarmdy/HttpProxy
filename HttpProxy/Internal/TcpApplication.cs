@@ -98,10 +98,9 @@ namespace HttpProxy.Internal
                 _logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} connected");
                 try
                 {
-                    Socket? clientStandIn= new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    Socket? clientStandIn = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                     var ipendpoint = context.MiddleEndPoint as IPEndPoint;
                     await clientStandIn.ConnectAsync(ipendpoint!);
-                    
                     do
                     {
                         var data = await receiveAsync(client);
@@ -111,9 +110,9 @@ namespace HttpProxy.Internal
                         }
                         //_logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} receive data {data.Length} Byte");
                         var request = _requestResolver.DataToRequest(data);
-                        request.Headers["host"][0].value=$"{_endPointProvider.Domain??ipendpoint!.Address.ToString()}:{ipendpoint!.Port}";
+                        request.Headers["host"][0].value=$"{_endPointProvider.Domain??ipendpoint!.Address.ToString()}{(ipendpoint!.Port==80 || ipendpoint.Port==443?"":"")}{(ipendpoint!.Port == 80 || ipendpoint.Port == 443 ? "" : ipendpoint.Port+"")}";
                         request.Headers["connection"][0].value="close";
-                        request.Headers["user-agent"] = [(1, "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.3 Mobile/15E148 Safari/604.1")];
+                        //request.Headers["user-agent"] = [(1, "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.3 Mobile/15E148 Safari/604.1")];
                         await clientStandIn.SendAsync(_requestResolver.RequestToData(request));
                         data = await receiveAsync(clientStandIn);
                         var response = _responseResolver.DataToResponse(data);
@@ -143,7 +142,7 @@ namespace HttpProxy.Internal
                         }
                         
                         var ret = await client.SendAsync(_responseResolver.ResponseToData(response));
-                        break;
+                        
                     } while (true);
                 }catch(Exception ex)
                 {
@@ -152,7 +151,7 @@ namespace HttpProxy.Internal
                 _logger.LogInformation($"client {clientEndPoint.Address}:{clientEndPoint.Port} end");
             });
         }
-        const string endOfChunked = "0\r\n";
+        const string endOfChunked = "0\r\n\r\n";
         private async Task<Memory<byte>> receiveAsync(Socket client,int maxlen=0,bool isChunked = false)
         {
             if (client == null)
